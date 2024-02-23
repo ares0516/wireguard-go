@@ -94,6 +94,35 @@ func CreateTUNWithRequestedGUID(ifname string, requestedGUID *windows.GUID, mtu 
 	return tun, nil
 }
 
+func OpenTUN(ifname string, requestedGUID *windows.GUID, mtu int) (Device, error) {
+	wt, err := wintun.OpenAdapter(ifname)
+	if err != nil {
+		return nil, fmt.Errorf("Error creating interface: %w", err)
+	}
+
+	forcedMTU := 1420
+	if mtu > 0 {
+		forcedMTU = mtu
+	}
+
+	tun := &NativeTun{
+		wt:        wt,
+		name:      ifname,
+		handle:    windows.InvalidHandle,
+		events:    make(chan Event, 10),
+		forcedMTU: forcedMTU,
+	}
+
+	tun.session, err = wt.StartSession(0x800000) // Ring capacity, 8 MiB
+	if err != nil {
+		tun.wt.Close()
+		close(tun.events)
+		return nil, fmt.Errorf("Error starting session: %w", err)
+	}
+	tun.readWait = tun.session.ReadWaitEvent()
+	return tun, nil
+}
+
 func (tun *NativeTun) Name() (string, error) {
 	return tun.name, nil
 }
